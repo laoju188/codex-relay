@@ -61,7 +61,7 @@ pub struct SessionStore {
     inner: Arc<DashMap<String, Vec<ChatMessage>>>,
     reasoning: Arc<DashMap<String, String>>,
     /// fingerprint(prior_messages, assistant_content) → reasoning_content
-    turn_reasoning: Arc<DashMap<u64, String>>,
+    turn_reasoning: Arc<DashMap<String, String>>,
 }
 
 impl Default for SessionStore {
@@ -208,11 +208,11 @@ impl SessionStore {
         None
     }
 
-    /// Hash assistant message content for turn-level reasoning lookup.
-    fn content_key(content: &str) -> u64 {
+    /// Generate content-based key for turn-level reasoning lookup.
+    fn content_key(content: &str) -> String {
         let mut hasher = DefaultHasher::new();
         content.hash(&mut hasher);
-        hasher.finish()
+        format!("content_{}", hasher.finish())
     }
 
     /// Retrieve history for a prior response_id, or empty vec if not found.
