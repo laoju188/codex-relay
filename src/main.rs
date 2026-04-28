@@ -253,7 +253,6 @@ async fn handle_responses_inner(state: AppState, req: ResponsesRequest, counter:
     if req.stream {
         let response_id = state.sessions.new_id();
         chat_req.stream = true;
-        let request_messages = chat_req.messages.clone();
         stream::translate_stream(stream::StreamArgs {
             client: state.client,
             url,
@@ -262,8 +261,9 @@ async fn handle_responses_inner(state: AppState, req: ResponsesRequest, counter:
             response_id,
             sessions: state.sessions,
             prior_messages: history,
-            request_messages,
             model,
+            dump_json: state.dump_json.clone(),
+            counter,
         })
         .into_response()
     } else {

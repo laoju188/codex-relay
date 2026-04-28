@@ -15,6 +15,29 @@ use crate::{
     types::{ChatMessage, ChatRequest, ChatStreamChunk},
 };
 
+fn dump_stream(dir: &std::path::Path, prefix: &str, counter: u32, body: &str) {
+    if dir.exists() {
+        let filename = format!("{:03}-{}.json", counter, prefix);
+        let path = dir.join(&filename);
+        if let Err(e) = std::fs::write(&path, body) {
+            warn!("failed to write dump {}: {e}", path.display());
+        }
+    }
+}
+
+fn strip_auth(body: &str) -> String {
+    match serde_json::from_str::<serde_json::Value>(body) {
+        Ok(mut v) => {
+            if let Some(obj) = v.as_object_mut() {
+                obj.remove("authorization");
+                obj.remove("Authorization");
+            }
+            serde_json::to_string(&v).unwrap_or_else(|_| body.to_string())
+        }
+        Err(_) => body.to_string(),
+    }
+}
+
 pub struct StreamArgs {
     pub client: reqwest::Client,
     pub url: String,
@@ -23,11 +46,9 @@ pub struct StreamArgs {
     pub response_id: String,
     pub sessions: SessionStore,
     pub prior_messages: Vec<ChatMessage>,
-    /// The fully translated request messages (including replayed history).
-    /// Used to save correct session history so turn-level reasoning can be
-    /// recovered when Codex replays the conversation without previous_response_id.
-    pub request_messages: Vec<ChatMessage>,
     pub model: String,
+    pub dump_json: Option<String>,
+    pub counter: u32,
 }
 
 struct ToolCallAccum {
@@ -56,8 +77,9 @@ pub fn translate_stream(
         response_id,
         sessions,
         prior_messages,
-        request_messages: _,
         model,
+        dump_json,
+        counter,
     } = args;
     let msg_item_id = format!("msg_{}", uuid::Uuid::new_v4().simple());
 
@@ -68,6 +90,12 @@ pub fn translate_stream(
                 "type": "response.created",
                 "response": { "id": &response_id, "status": "in_progress", "model": &model }
             }).to_string()));
+
+        // Dump outbound Chat Completions request (streaming path)
+        if let Some(ref dir) = dump_json {
+            let chat_json = serde_json::to_string(&chat_req).unwrap_or_default();
+            dump_stream(std::path::Path::new(dir), "outbound-chat", counter, &strip_auth(&chat_json));
+        }
 
         let mut builder = client.post(&url).header("Content-Type", "application/json");
         if !api_key.is_empty() {
@@ -80,15 +108,25 @@ pub fn translate_stream(
                 let status = r.status();
                 let body = r.text().await.unwrap_or_default();
                 error!("upstream {status}: {body}");
+                let status_u16 = status.as_u16();
+                // Dump upstream error
+                if let Some(ref dir) = dump_json {
+                    dump_stream(std::path::Path::new(dir), "upstream-error", counter, &body);
+                }
                 yield Ok(Event::default().event("response.failed").data(
-                    json!({"type": "response.failed", "response": {"id": &response_id, "status": "failed", "error": {"code": format!("deepseek_upstream_{}", status.as_u16()), "message": body}}}).to_string()
+                    json!({"type": "response.failed", "response": {"id": &response_id, "status": "failed", "error": {"code": format!("deepseek_upstream_{status_u16}"), "message": body}}}).to_string()
                 ));
                 return;
             }
             Err(e) => {
                 error!("upstream request failed: {e}");
+                let err_msg = e.to_string();
+                // Dump connection error
+                if let Some(ref dir) = dump_json {
+                    dump_stream(std::path::Path::new(dir), "upstream-error", counter, &err_msg);
+                }
                 yield Ok(Event::default().event("response.failed").data(
-                    json!({"type": "response.failed", "response": {"id": &response_id, "status": "failed", "error": {"code": "connection_error", "message": e.to_string()}}}).to_string()
+                    json!({"type": "response.failed", "response": {"id": &response_id, "status": "failed", "error": {"code": "connection_error", "message": err_msg}}}).to_string()
                 ));
                 return;
             }
