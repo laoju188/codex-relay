@@ -199,7 +199,6 @@ async fn handle_responses(State(state): State<AppState>, body: axum::body::Bytes
         let body_str = String::from_utf8_lossy(&body);
         write_dump(path, "inbound-responses", counter, body_str);
     }
-    }
 
     debug!(
         "→ model={} stream={} input_items={} tools={} prev_resp={:?}",
