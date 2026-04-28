@@ -74,7 +74,7 @@ fn strip_auth(body: &str) -> String {
     }
 }
 
-fn write_dump(dir: &Path, prefix: &str, counter: u32, body: &str) {
+fn write_dump(dir: &Path, prefix: &str, counter: u32, body: impl AsRef<str>) {
     if dir.exists() {
         let filename = format!("{:03}-{}.json", counter, prefix);
         let path = dir.join(&filename);
@@ -196,7 +196,9 @@ async fn handle_responses(State(state): State<AppState>, body: axum::body::Bytes
     // Debug dump: inbound Responses API request
     if let Some(ref dir) = state.dump_json {
         let path = Path::new(dir);
-        write_dump(path, "inbound-responses", counter, &body);
+        let body_str = String::from_utf8_lossy(&body);
+        write_dump(path, "inbound-responses", counter, body_str);
+    }
     }
 
     debug!(
