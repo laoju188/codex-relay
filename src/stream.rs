@@ -56,7 +56,7 @@ pub fn translate_stream(
         response_id,
         sessions,
         prior_messages,
-        request_messages,
+        request_messages: _,
         model,
     } = args;
     let msg_item_id = format!("msg_{}", uuid::Uuid::new_v4().simple());

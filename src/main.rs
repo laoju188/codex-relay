@@ -78,7 +78,7 @@ fn write_dump(dir: &Path, prefix: &str, counter: u32, body: impl AsRef<str>) {
     if dir.exists() {
         let filename = format!("{:03}-{}.json", counter, prefix);
         let path = dir.join(&filename);
-        if let Err(e) = fs::write(&path, body) {
+        if let Err(e) = fs::write(&path, body.as_ref().as_bytes()) {
             warn!("failed to write dump {}: {e}", path.display());
         }
     }
