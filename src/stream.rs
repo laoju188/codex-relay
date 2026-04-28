@@ -81,7 +81,7 @@ pub fn translate_stream(
                 let body = r.text().await.unwrap_or_default();
                 error!("upstream {status}: {body}");
                 yield Ok(Event::default().event("response.failed").data(
-                    json!({"type": "response.failed", "response": {"id": &response_id, "status": "failed", "error": {"code": status.as_u16().to_string(), "message": body}}}).to_string()
+                    json!({"type": "response.failed", "response": {"id": &response_id, "status": "failed", "error": {"code": format!("deepseek_upstream_{}", status.as_u16()), "message": body}}}).to_string()
                 ));
                 return;
             }

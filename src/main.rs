@@ -3,7 +3,7 @@ mod stream;
 mod translate;
 mod types;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use axum::{
     extract::{Request, State},
     http::StatusCode,
@@ -12,12 +12,13 @@ use axum::{
     Json, Router,
 };
 use clap::Parser;
-use reqwest::{Client, Url};
+use reqwest::{Client, Proxy, Url};
 use session::SessionStore;
 use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 use tracing::{debug, error, info, warn};
 use types::*;
 
@@ -99,7 +100,7 @@ async fn main() -> Result<()> {
 
     let state = AppState {
         sessions: SessionStore::new(),
-        client: Client::new(),
+        client: build_http_client()?,
         upstream: Arc::new(upstream),
         api_key: Arc::new(args.api_key),
         dump_json: args.dump_json,
@@ -121,6 +122,30 @@ async fn main() -> Result<()> {
     axum::serve(listener, app).await?;
 
     Ok(())
+}
+
+fn build_http_client() -> Result<Client> {
+    let mut builder = Client::builder()
+        .timeout(Duration::from_secs(600))
+        .connect_timeout(Duration::from_secs(60));
+
+    let proxy_url = std::env::var("CODEX_RELAY_PROXY")
+        .or_else(|_| std::env::var("HTTPS_PROXY"))
+        .or_else(|_| std::env::var("https_proxy"))
+        .or_else(|_| std::env::var("HTTP_PROXY"))
+        .or_else(|_| std::env::var("http_proxy"))
+        .unwrap_or_default();
+
+    if !proxy_url.trim().is_empty() {
+        let proxy = Proxy::all(&proxy_url)
+            .with_context(|| format!("invalid proxy URL: {proxy_url}"))?;
+        builder = builder.proxy(proxy);
+        info!("using proxy: {proxy_url}");
+    } else {
+        info!("no proxy configured — connecting directly");
+    }
+
+    builder.build().context("failed to build HTTP client")
 }
 
 /// Validate that `--upstream` is an acceptable HTTP(S) URL.
